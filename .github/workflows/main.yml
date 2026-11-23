@@ -1,0 +1,60 @@
+name: Build SedaDub iPad IPA (No Mac Needed)
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-ipa:
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Auto-Extract ZIP if uploaded
+        run: |
+          if [ -z "$(find . -maxdepth 3 -name 'project.yml')" ]; then
+            for z in $(find . -maxdepth 2 -name '*.zip'); do
+              if [ -f "$z" ]; then
+                unzip -o "$z" -d extracted_project
+              fi
+            done
+          fi
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode Project & Build IPA
+        run: |
+          SPEC_PATH=$(find . -maxdepth 4 -name 'project.yml' | head -n 1)
+          if [ -z "$SPEC_PATH" ]; then
+            echo "ERROR: project.yml not found. Files in repo:"
+            ls -la
+            exit 1
+          fi
+          PROJ_DIR=$(dirname "$SPEC_PATH")
+          echo "Found project at: $PROJ_DIR"
+          cd "$PROJ_DIR"
+          xcodegen generate
+          xcodebuild \
+            -project SedaDub.xcodeproj \
+            -scheme SedaDub \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            AD_HOC_CODE_SIGNING_ALLOWED=NO \
+            build
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/SedaDub.app Payload/
+          zip -r "$GITHUB_WORKSPACE/SedaDub-iPad.ipa" Payload
+
+      - name: Upload SedaDub-iPad.ipa Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SedaDub-iPad-IPA
+          path: SedaDub-iPad.ipa
